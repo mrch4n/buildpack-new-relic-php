@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# bin/compile <build-dir> <cache-dir>
+
+set -e
+
+BUILD_DIR=$1
+CACHE_DIR=$2
+
+# Create necessary directories
+mkdir -p "$BUILD_DIR/.profile.d"
+mkdir -p "$BUILD_DIR/.apt/usr/lib/php"
+
+# Download and install New Relic PHP agent
+echo "-----> Installing New Relic PHP agent..."
+curl -L https://download.newrelic.com/php_agent/archive/10.11.0.3/newrelic-php5-10.11.0.3-linux.tar.gz | tar -C "$BUILD_DIR/.apt/usr/lib/php" -zx
+
+# Create New Relic configuration file
+cat > "$BUILD_DIR/.apt/etc/php/conf.d/newrelic.ini" << EOF
+extension=newrelic.so
+newrelic.appname=\${NEW_RELIC_APP_NAME}
+newrelic.license=\${NEW_RELIC_LICENSE_KEY}
+newrelic.daemon.address=\${NEW_RELIC_DAEMON_ADDRESS:-/tmp/.newrelic.sock}
+newrelic.daemon.port=\${NEW_RELIC_DAEMON_PORT:-0}
+newrelic.logfile=/tmp/newrelic-daemon.log
+newrelic.loglevel=info
+EOF
+
+# Create profile.d script to set environment variables
+cat > "$BUILD_DIR/.profile.d/newrelic.sh" << EOF
+#!/usr/bin/env bash
+export NEW_RELIC_APP_NAME=\${NEW_RELIC_APP_NAME:-"PHP Application"}
+export NEW_RELIC_LICENSE_KEY=\${NEW_RELIC_LICENSE_KEY:-""}
+export NEW_RELIC_DAEMON_ADDRESS=\${NEW_RELIC_DAEMON_ADDRESS:-"/tmp/.newrelic.sock"}
+export NEW_RELIC_DAEMON_PORT=\${NEW_RELIC_DAEMON_PORT:-"0"}
+EOF
+
+chmod +x "$BUILD_DIR/.profile.d/newrelic.sh"
+
+echo "-----> New Relic PHP agent installation complete" 
