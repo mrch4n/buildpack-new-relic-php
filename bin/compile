@@ -10,6 +10,21 @@ CACHE_DIR=$2
 mkdir -p "$BUILD_DIR/.profile.d"
 mkdir -p "$BUILD_DIR/.apt/etc/apt/sources.list.d"
 mkdir -p "$BUILD_DIR/.apt/usr/share/keyrings"
+mkdir -p "$BUILD_DIR/.apt/var/lib/apt/lists/partial"
+mkdir -p "$BUILD_DIR/.apt/var/cache/apt/archives/partial"
+
+# Set APT directories to use our custom paths
+export APT_CONFIG="$BUILD_DIR/.apt/etc/apt/apt.conf"
+cat > "$APT_CONFIG" << EOF
+Dir::Etc::sourcelist="$BUILD_DIR/.apt/etc/apt/sources.list";
+Dir::Etc::sourceparts="$BUILD_DIR/.apt/etc/apt/sources.list.d";
+Dir::Etc::trusted="$BUILD_DIR/.apt/etc/apt/trusted.gpg";
+Dir::Etc::trustedparts="$BUILD_DIR/.apt/etc/apt/trusted.gpg.d";
+Dir::State="$BUILD_DIR/.apt/var/lib/apt";
+Dir::State::lists="$BUILD_DIR/.apt/var/lib/apt/lists";
+Dir::Cache="$BUILD_DIR/.apt/var/cache/apt";
+Dir::Cache::archives="$BUILD_DIR/.apt/var/cache/apt/archives";
+EOF
 
 # Detect distribution and version
 echo "-----> Detecting Linux distribution..."
@@ -28,23 +43,23 @@ OS=$(echo "$OS" | tr '[:upper:]' '[:lower:]')
 
 echo "-----> Detected OS: $OS $VERSION"
 
-apt-get update
-apt-get install -y curl gpg
+# Install required packages
+echo "-----> Installing prerequisites..."
+apt-get -o "Dir::Etc=$BUILD_DIR/.apt/etc/apt" update
+DEBIAN_FRONTEND=noninteractive apt-get -o "Dir::Etc=$BUILD_DIR/.apt/etc/apt" install -y curl gpg
 
-# Add New Relic PHP repository and GPG key
+# Add New Relic PHP repository
 echo "-----> Adding New Relic PHP repository..."
 echo 'deb [signed-by=/usr/share/keyrings/download.newrelic.com-newrelic.gpg] http://apt.newrelic.com/debian/ newrelic non-free' > "$BUILD_DIR/.apt/etc/apt/sources.list.d/newrelic.list"
 
+# Add New Relic GPG key
 echo "-----> Adding New Relic GPG key..."
 curl -fsSL https://download.newrelic.com/548C16BF.gpg | gpg --dearmor -o "$BUILD_DIR/.apt/usr/share/keyrings/download.newrelic.com-newrelic.gpg"
 
-# Update package lists
-echo "-----> Updating package lists..."
-apt-get update
-
-# Install New Relic PHP agent
+# Update and install New Relic PHP agent
 echo "-----> Installing New Relic PHP agent..."
-DEBIAN_FRONTEND=noninteractive apt-get install -y newrelic-php5
+apt-get -o "Dir::Etc=$BUILD_DIR/.apt/etc/apt" update
+DEBIAN_FRONTEND=noninteractive apt-get -o "Dir::Etc=$BUILD_DIR/.apt/etc/apt" install -y newrelic-php5
 
 # Configure New Relic PHP agent
 echo "-----> Configuring New Relic PHP agent..."
@@ -53,9 +68,9 @@ cat > "$BUILD_DIR/.profile.d/newrelic.sh" << EOF
 export NEW_RELIC_APP_NAME=\${NEW_RELIC_APP_NAME:-"PHP Application"}
 export NEW_RELIC_LICENSE_KEY=\${NEW_RELIC_LICENSE_KEY:-""}
 
-# Run newrelic-install if not already configured
-if [ ! -f "\$HOME/.apt/etc/php/conf.d/newrelic.ini" ]; then
-    sudo newrelic-install install
+# Configure New Relic if license key is provided
+if [ ! -z "\$NEW_RELIC_LICENSE_KEY" ]; then
+    newrelic-install install
 fi
 EOF
 
