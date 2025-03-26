@@ -8,69 +8,39 @@ CACHE_DIR=$2
 
 # Create necessary directories
 mkdir -p "$BUILD_DIR/.profile.d"
-mkdir -p "$BUILD_DIR/.apt/etc/apt/sources.list.d"
-mkdir -p "$BUILD_DIR/.apt/usr/share/keyrings"
-mkdir -p "$BUILD_DIR/.apt/var/lib/apt/lists/partial"
-mkdir -p "$BUILD_DIR/.apt/var/cache/apt/archives/partial"
+mkdir -p "$BUILD_DIR/.apt/usr/lib/php"
+mkdir -p "$BUILD_DIR/.apt/etc/php/conf.d"
 
-# Set APT directories to use our custom paths
-export APT_CONFIG="$BUILD_DIR/.apt/etc/apt/apt.conf"
-cat > "$APT_CONFIG" << EOF
-Dir::Etc::sourcelist="$BUILD_DIR/.apt/etc/apt/sources.list";
-Dir::Etc::sourceparts="$BUILD_DIR/.apt/etc/apt/sources.list.d";
-Dir::Etc::trusted="$BUILD_DIR/.apt/etc/apt/trusted.gpg";
-Dir::Etc::trustedparts="$BUILD_DIR/.apt/etc/apt/trusted.gpg.d";
-Dir::State="$BUILD_DIR/.apt/var/lib/apt";
-Dir::State::lists="$BUILD_DIR/.apt/var/lib/apt/lists";
-Dir::Cache="$BUILD_DIR/.apt/var/cache/apt";
-Dir::Cache::archives="$BUILD_DIR/.apt/var/cache/apt/archives";
+# Download and install New Relic PHP agent
+echo "-----> Installing New Relic PHP agent..."
+curl -L https://download.newrelic.com/php_agent/archive/10.11.0.3/newrelic-php5-10.11.0.3-linux.tar.gz | tar -C "$BUILD_DIR/.apt/usr/lib/php" -zx
+
+# Create New Relic configuration file
+cat > "$BUILD_DIR/.apt/etc/php/conf.d/newrelic.ini" << EOF
+extension=newrelic.so
+newrelic.appname=\${NEW_RELIC_APP_NAME}
+newrelic.license=\${NEW_RELIC_LICENSE_KEY}
+newrelic.daemon.address=\${NEW_RELIC_DAEMON_ADDRESS:-/tmp/.newrelic.sock}
+newrelic.daemon.port=\${NEW_RELIC_DAEMON_PORT:-0}
+newrelic.logfile=/tmp/newrelic-daemon.log
+newrelic.loglevel=info
+newrelic.daemon.logfile=/tmp/newrelic-daemon.log
+newrelic.daemon.loglevel=info
+newrelic.daemon.ssl=1
+newrelic.daemon.pidfile=/tmp/newrelic-daemon.pid
 EOF
 
-# Detect distribution and version
-echo "-----> Detecting Linux distribution..."
-if [ -f /etc/os-release ]; then
-    . /etc/os-release
-    OS=$NAME
-    VERSION=$VERSION_ID
-elif [ -f /etc/lsb-release ]; then
-    . /etc/lsb-release
-    OS=$DISTRIB_ID
-    VERSION=$DISTRIB_RELEASE
-fi
-
-# Convert OS name to lowercase for easier comparison
-OS=$(echo "$OS" | tr '[:upper:]' '[:lower:]')
-
-echo "-----> Detected OS: $OS $VERSION"
-
-# Install required packages
-echo "-----> Installing prerequisites..."
-apt-get -o "Dir::Etc=$BUILD_DIR/.apt/etc/apt" update
-DEBIAN_FRONTEND=noninteractive apt-get -o "Dir::Etc=$BUILD_DIR/.apt/etc/apt" install -y curl gpg
-
-# Add New Relic PHP repository
-echo "-----> Adding New Relic PHP repository..."
-echo 'deb [signed-by=/usr/share/keyrings/download.newrelic.com-newrelic.gpg] http://apt.newrelic.com/debian/ newrelic non-free' > "$BUILD_DIR/.apt/etc/apt/sources.list.d/newrelic.list"
-
-# Add New Relic GPG key
-echo "-----> Adding New Relic GPG key..."
-curl -fsSL https://download.newrelic.com/548C16BF.gpg | gpg --dearmor -o "$BUILD_DIR/.apt/usr/share/keyrings/download.newrelic.com-newrelic.gpg"
-
-# Update and install New Relic PHP agent
-echo "-----> Installing New Relic PHP agent..."
-apt-get -o "Dir::Etc=$BUILD_DIR/.apt/etc/apt" update
-DEBIAN_FRONTEND=noninteractive apt-get -o "Dir::Etc=$BUILD_DIR/.apt/etc/apt" install -y newrelic-php5
-
-# Configure New Relic PHP agent
-echo "-----> Configuring New Relic PHP agent..."
+# Create profile.d script to set environment variables and start the daemon
 cat > "$BUILD_DIR/.profile.d/newrelic.sh" << EOF
 #!/usr/bin/env bash
 export NEW_RELIC_APP_NAME=\${NEW_RELIC_APP_NAME:-"PHP Application"}
 export NEW_RELIC_LICENSE_KEY=\${NEW_RELIC_LICENSE_KEY:-""}
+export NEW_RELIC_DAEMON_ADDRESS=\${NEW_RELIC_DAEMON_ADDRESS:-"/tmp/.newrelic.sock"}
+export NEW_RELIC_DAEMON_PORT=\${NEW_RELIC_DAEMON_PORT:-"0"}
 
-# Configure New Relic if license key is provided
-if [ ! -z "\$NEW_RELIC_LICENSE_KEY" ]; then
-    newrelic-install install
+# Start New Relic daemon if not already running
+if [ ! -f /tmp/newrelic-daemon.pid ]; then
+    \$BUILD_DIR/.apt/usr/lib/php/newrelic-daemon -c \$BUILD_DIR/.apt/etc/php/conf.d/newrelic.ini -f
 fi
 EOF
 
