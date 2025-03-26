@@ -28,6 +28,9 @@ OS=$(echo "$OS" | tr '[:upper:]' '[:lower:]')
 
 echo "-----> Detected OS: $OS $VERSION"
 
+apt-get update
+apt-get install -y curl gpg
+
 # Add New Relic PHP repository and GPG key
 echo "-----> Adding New Relic PHP repository..."
 echo 'deb [signed-by=/usr/share/keyrings/download.newrelic.com-newrelic.gpg] http://apt.newrelic.com/debian/ newrelic non-free' > "$BUILD_DIR/.apt/etc/apt/sources.list.d/newrelic.list"
