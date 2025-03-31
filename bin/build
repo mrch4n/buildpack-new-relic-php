@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+
+set -eo pipefail
+
+# 1. Load environment variables
+BUILD_DIR="${CNB_BUILD_DIR}"
+LAYERS_DIR="${CNB_LAYERS_DIR}"
+PLATFORM_DIR="${CNB_PLATFORM_DIR}"
+
+# 2. Create a layer for New Relic
+newrelic_layer="${LAYERS_DIR}/newrelic"
+mkdir -p "${newrelic_layer}"
+
+# 3. Create layer metadata
+cat > "${newrelic_layer}.toml" << EOF
+[types]
+launch = true
+build = true
+cache = true
+EOF
+
+# 4. Install New Relic PHP agent using apt
+apt-get update
+apt-get install -y wget gnupg
+
+# Add New Relic repository
+echo 'deb http://apt.newrelic.com/debian/ newrelic non-free' | tee /etc/apt/sources.list.d/newrelic.list
+wget -O- https://download.newrelic.com/548C16BF.gpg | apt-key add -
+apt-get update
+
+# Install New Relic PHP agent
+apt-get install -y newrelic-php5
+
+# 5. Create New Relic configuration
+mkdir -p "${newrelic_layer}/etc/php/conf.d"
+cat > "${newrelic_layer}/etc/php/conf.d/newrelic.ini" << EOF
+extension=newrelic.so
+newrelic.appname=\${NEW_RELIC_APP_NAME}
+newrelic.license=\${NEW_RELIC_LICENSE_KEY}
+newrelic.daemon.address=\${NEW_RELIC_DAEMON_ADDRESS:-/tmp/.newrelic.sock}
+newrelic.daemon.port=\${NEW_RELIC_DAEMON_PORT:-0}
+newrelic.logfile=/tmp/newrelic-daemon.log
+newrelic.loglevel=info
+newrelic.daemon.logfile=/tmp/newrelic-daemon.log
+newrelic.daemon.loglevel=info
+newrelic.daemon.ssl=1
+newrelic.daemon.pidfile=/tmp/newrelic-daemon.pid
+EOF
+
+# 6. Create profile.d script
+mkdir -p "${newrelic_layer}/profile.d"
+cat > "${newrelic_layer}/profile.d/newrelic.sh" << EOF
+#!/usr/bin/env bash
+export NEW_RELIC_APP_NAME=\${NEW_RELIC_APP_NAME:-"PHP Application"}
+export NEW_RELIC_LICENSE_KEY=\${NEW_RELIC_LICENSE_KEY:-""}
+export NEW_RELIC_DAEMON_ADDRESS=\${NEW_RELIC_DAEMON_ADDRESS:-"/tmp/.newrelic.sock"}
+export NEW_RELIC_DAEMON_PORT=\${NEW_RELIC_DAEMON_PORT:-"0"}
+
+# Start New Relic daemon if not already running
+if [ ! -f /tmp/newrelic-daemon.pid ]; then
+    newrelic-daemon -c "${newrelic_layer}/etc/php/conf.d/newrelic.ini" -f
+fi
+EOF
+
+chmod +x "${newrelic_layer}/profile.d/newrelic.sh"
+
+# 7. Set layer environment variables
+cat > "${newrelic_layer}/env.launch/php-config.env" << EOF
+PHP_INI_SCAN_DIR=${newrelic_layer}/etc/php/conf.d
+EOF
+
+echo "-----> New Relic PHP agent installation complete" 

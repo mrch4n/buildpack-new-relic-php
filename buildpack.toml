@@ -1,0 +1,15 @@
+api = "0.7"
+
+[buildpack]
+id = "com.example.newrelic-php"
+version = "1.0.0"
+name = "New Relic PHP Agent Buildpack"
+
+[[stacks]]
+id = "heroku-20"
+
+[[stacks]]
+id = "heroku-22"
+
+[[stacks]]
+id = "heroku-24"
